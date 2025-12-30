@@ -1,35 +1,49 @@
+version: '3.8'
+
 services:
-  tgbot:
-    build: .
-    container_name: sheerid-tgbot
-    restart: unless-stopped
-
-    # 环境变量
+  # 数据库服务 (新增部分)
+  db:
+    image: mysql:5.7
+    container_name: tgbot-mysql
     environment:
-      - TZ=Asia/Shanghai
-      - PYTHONUNBUFFERED=1
-      # Telegram Bot 配置
-      - BOT_TOKEN=${BOT_TOKEN}
-      - CHANNEL_USERNAME=${CHANNEL_USERNAME:-pk_oa}
-      - CHANNEL_URL=${CHANNEL_URL:-https://t.me/pk_oa}
-      - ADMIN_USER_ID=${ADMIN_USER_ID}
-      # MySQL配置
-      - MYSQL_HOST=${MYSQL_HOST:-localhost}
-      - MYSQL_PORT=${MYSQL_PORT:-3306}
-      - MYSQL_USER=${MYSQL_USER:-tgbot_user}
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
-      - MYSQL_DATABASE=${MYSQL_DATABASE:-tgbot_verify}
+      MYSQL_ROOT_PASSWORD: 12345678  # Root 密码，可自行修改
+      MYSQL_DATABASE: tgbot_verify               # 必须与 .env 一致
+      MYSQL_USER: tgbot_user                     # 必须与 .env 一致
+      MYSQL_PASSWORD: tgbot_secure_pass          # 必须与 .env 一致
+    volumes:
+      - ./mysql_data:/var/lib/mysql              # 将数据库数据持久化到当前目录
+    networks:
+      - tgbot_net
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    restart: always
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
 
-    # 日志持久化
+  # 机器人服务 (原项目)
+  bot:
+    build: .
+    container_name: tgbot-verify
+    env_file:
+      - .env
+    environment:
+      - MYSQL_HOST=db  # 强制指定连接到上面的 db 服务
     volumes:
       - ./logs:/app/logs
+      # 如果你需要修改内部配置代码，可以挂载这两个目录
+      - ./one:/app/one
+      - ./k12:/app/k12
+      - ./spotify:/app/spotify
+      - ./youtube:/app/youtube
+      - ./Boltnew:/app/Boltnew
+    depends_on:
+      db:
+        condition: service_healthy  # 等待数据库完全启动后再启动机器人
+    networks:
+      - tgbot_net
+    restart: always
 
-    # 日志配置
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-    # 网络模式
-    network_mode: bridge
+networks:
+  tgbot_net:
+    driver: bridge
